@@ -14,22 +14,26 @@ import static java.lang.Math.round;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLDecoder;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  *
  * @author Igor Gayvan
  */
-public class DownloadFile {
+public class DownloadFile implements Runnable {
 
     private String fileName;
     private Long fileSize;
     private URL fileURL;
     private int isAlreadyDownload;
 
-    private static int isReplaceAllFile = 0;
+    private static int isReplaceAllFile = 1;
+
+    private DataSource ds;
+    private List<DownloadFile> downloadFileList;
 
     public DownloadFile() {
     }
@@ -41,6 +45,22 @@ public class DownloadFile {
 
     public DownloadFile(URL fileURL) {
         this.fileURL = fileURL;
+    }
+
+    public DataSource getDs() {
+        return ds;
+    }
+
+    public void setDs(DataSource ds) {
+        this.ds = ds;
+    }
+
+    public List<DownloadFile> getDownloadFileList() {
+        return downloadFileList;
+    }
+
+    public void setDownloadFileList(List<DownloadFile> downloadFileList) {
+        this.downloadFileList = downloadFileList;
     }
 
     public int getIsAlreadyDownload() {
@@ -83,11 +103,11 @@ public class DownloadFile {
         DownloadFile.isReplaceAllFile = isReplaceAllFile;
     }
 
-    public void loadFile(DataSource ds, List<DownloadFile> downloadFileList) throws IOException {
+    public void loadFile() throws IOException {
         URLConnection conn = fileURL.openConnection();
 
         String mime = conn.getContentType();
-        String urlFilename = new String(conn.getURL().getFile().getBytes("ISO-8859-1"), "utf-8");        
+        String urlFilename = new String(conn.getURL().getFile().getBytes("ISO-8859-1"), "utf-8");
         this.fileName = URLDecoder.decode(new File(urlFilename).getName(), "utf-8");
 
         int isLoadFile = 1;
@@ -135,11 +155,10 @@ public class DownloadFile {
 
             System.out.printf("Downloading: (%s) %s [%.1fMB]\n", mime, fileName, Float.valueOf(fileSize / Utils.COUNT_BYTES_IN_MEGABYTE));
 
-//            InputStream fileIS = conn.getInputStream();
-            BufferedInputStream fileIS =  new BufferedInputStream(conn.getInputStream());
+            BufferedInputStream fileIS = new BufferedInputStream(conn.getInputStream());
 
             // write the inputStream to a FileOutputStream
-            BufferedOutputStream outputStream = new BufferedOutputStream(new FileOutputStream(new File(ds.PATH_DOWNLOAD + "/" + fileName)));
+            BufferedOutputStream outputStream = new BufferedOutputStream(new FileOutputStream(new File(DataSource.PATH_DOWNLOAD + "/" + fileName)));
 
             int read = 0;
             byte[] bytes = new byte[1024];
@@ -167,31 +186,13 @@ public class DownloadFile {
         }
     }
 
-    public static void getFiles(URL playlistUrl) throws IOException {
-//        URL playlistUrl = new URL("http://www.ex.ua/playlist/17427869.m3u");
-        List<URL> fileList = new ArrayList<>();
-
-        List<DownloadFile> downloadFileList = new ArrayList<>();
-
-        DataSource ds = new DataSource(downloadFileList);
-
-        DownloadFile.setIsReplaceAllFile(0);
-
-        ShowData.ShowListAlreadyDownloadFiles(downloadFileList);
-
-        try (Scanner scanner = new Scanner(playlistUrl.openStream())) {
-            while (scanner.hasNextLine()) {
-                URL fileUrl = new URL(scanner.nextLine());
-                fileList.add(fileUrl);
-            }
-
-            for (URL fileDownloadURL : fileList) {
-                System.out.printf("%s%n", fileDownloadURL);
-
-                DownloadFile df = new DownloadFile(fileDownloadURL);
-                df.loadFile(ds, downloadFileList);
-            }
+    @Override
+    public void run() {
+        try {
+            loadFile();
+        } catch (IOException ex) {
+            Logger.getLogger(DownloadFile.class.getName()).log(Level.SEVERE, null, ex);
         }
-
     }
+
 }
