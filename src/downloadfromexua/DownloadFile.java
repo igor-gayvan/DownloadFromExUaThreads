@@ -167,20 +167,20 @@ public class DownloadFile implements Runnable {
             int prevProgress = 0;
 
             while ((read = fileIS.read(bytes)) != -1) {
-                cntByteCurFile = cntByteCurFile + read;
-                int curProgress = (int) round(cntByteCurFile / fileSize * 100);
-                if (prevProgress != curProgress) {
-                    String strPad = Utils.padl("", curProgress + 1, '=');
-
-                    System.out.printf("\r[%-100s]", strPad);
-                }
+//                cntByteCurFile = cntByteCurFile + read;
+//                int curProgress = (int) round(cntByteCurFile / fileSize * 100);
+//                if (prevProgress != curProgress) {
+//                    String strPad = Utils.padl("", curProgress + 1, '=');
+//
+//                    System.out.printf("\r[%-100s]", strPad);
+//                }
+//                prevProgress = curProgress;
                 outputStream.write(bytes, 0, read);
-                prevProgress = curProgress;
             }
 
             fileIS.close();
             outputStream.close();
-            System.out.println("\nDownloaded");
+            System.out.printf("\nDownloaded %s%n", fileName);
 
             downloadFileList.add(this);
         }
