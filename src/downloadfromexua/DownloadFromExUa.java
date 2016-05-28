@@ -26,55 +26,40 @@ public class DownloadFromExUa {
     /**
      * @param args the command line arguments
      */
-    public static void main(String[] args) throws MalformedURLException {
-        Console console = new Console(System.in);
+    public static void main(String[] args) throws MalformedURLException, InterruptedException {
 
-        console.addActionListener(new ActionListener() {
-            // Выход
-            @Override
-            public void exitAction() {
-                System.exit(0);
-            }
+        try {
+            getFiles();
+        } catch (IOException ex) {
+            Logger.getLogger(DownloadFromExUa.class.getName()).log(Level.SEVERE, null, ex);
+        }
 
-            @Override
-            public void getUrl4DownloadAction() {
-                try {
-                    getFiles(new URL(console.getInputText()));
-                } catch (IOException ex) {
-                    Logger.getLogger(DownloadFromExUa.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (InterruptedException ex) {
-                    Logger.getLogger(DownloadFromExUa.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
-
-            @Override
-            public void confirmReplaceFiletAction() {
-                System.exit(0);
-            }
-        });
-
-        console.working();
     }
 
-    public static void getFiles(URL playlistUrl) throws IOException, InterruptedException {
-//        URL playlistUrl = new URL("http://www.ex.ua/playlist/17427869.m3u");
+    ;
+
+//        console.working();
+
+    private static void getFiles() throws MalformedURLException {
+        URL playlistUrl = new URL("http://www.ex.ua/playlist/101529168.m3u");
+
         List<URL> fileList = new ArrayList<>();
 
         List<DownloadFile> downloadFileList = new ArrayList<>();
 
         DataSource ds = new DataSource(downloadFileList);
-
         DownloadFile.setIsReplaceAllFile(1);
-        ShowData.ShowListAlreadyDownloadFiles(downloadFileList);
 
         try (Scanner scanner = new Scanner(playlistUrl.openStream())) {
             while (scanner.hasNextLine()) {
                 URL fileUrl = new URL(scanner.nextLine());
                 fileList.add(fileUrl);
             }
+        } catch (IOException ex) {
+            Logger.getLogger(DownloadFromExUa.class.getName()).log(Level.SEVERE, null, ex);
         }
 
-        ExecutorService threadPool = Executors.newFixedThreadPool(5);
+        ExecutorService threadPool = Executors.newFixedThreadPool(3);
 
         for (URL fileDownloadURL : fileList) {
             System.out.printf("%s%n", fileDownloadURL);
@@ -92,21 +77,28 @@ public class DownloadFromExUa {
 
         if (!threadPool.isTerminated()) {
             System.out.println("for cancel downloading press any key");
-            System.in.read();
+            try {
+                System.in.read();
+            } catch (IOException ex) {
+                Logger.getLogger(DownloadFromExUa.class.getName()).log(Level.SEVERE, null, ex);
+            }
             System.out.println("CANCELING...");
 
-            // Wait 1 second for tasks.
-            if (!threadPool.awaitTermination(1, TimeUnit.SECONDS)) {
-                // Hard stop...
-                List<Runnable> shutdownNow = threadPool.shutdownNow();
+            try {
+                // Wait 1 second for tasks.
+                if (!threadPool.awaitTermination(1, TimeUnit.SECONDS)) {
+                    // Hard stop...
+                    List<Runnable> shutdownNow = threadPool.shutdownNow();
 
-                for (Runnable runnable : shutdownNow) {
-                    DownloadFile df = (DownloadFile) runnable;
+                    for (Runnable runnable : shutdownNow) {
+                        DownloadFile df = (DownloadFile) runnable;
 
-                    System.out.println("Not downloaded: " + df.getFileURL());
+                        System.out.println("Not downloaded: " + df.getFileURL());
+                    }
                 }
+            } catch (InterruptedException ex) {
+                Logger.getLogger(DownloadFromExUa.class.getName()).log(Level.SEVERE, null, ex);
             }
         }
-
     }
 }
