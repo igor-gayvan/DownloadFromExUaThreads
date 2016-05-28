@@ -31,7 +31,7 @@ public class DataSource {
             if (files != null) {
                 for (File file : files) {
 
-                    downloadFileList.add(new DownloadFile(file.getName(), file.length()));
+                    downloadFileList.add(new DownloadFile(file.getName(), (int) file.length()));
                     sizeDownloadFolder += file.length();
                 }
             }
