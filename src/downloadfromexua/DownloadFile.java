@@ -10,37 +10,62 @@ import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import static java.lang.Math.floor;
 import static java.lang.Math.round;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLDecoder;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  *
  * @author Igor Gayvan
  */
-public class DownloadFile {
+public class DownloadFile implements Runnable {
+
+    private static final int COUNT_DOWNLOAD_PART = 1;
 
     private String fileName;
-    private Long fileSize;
+    private long fileSize;
     private URL fileURL;
     private int isAlreadyDownload;
 
-    private static int isReplaceAllFile = 0;
+    private static int isReplaceAllFile = 1;
+
+    private DataSource ds;
+    private List<DownloadFile> downloadFileList;
 
     public DownloadFile() {
     }
 
-    public DownloadFile(String fileName, Long fileSize) {
+    public DownloadFile(String fileName, int fileSize) {
         this.fileName = fileName;
         this.fileSize = fileSize;
     }
 
     public DownloadFile(URL fileURL) {
         this.fileURL = fileURL;
+    }
+
+    public DataSource getDs() {
+        return ds;
+    }
+
+    public void setDs(DataSource ds) {
+        this.ds = ds;
+    }
+
+    public List<DownloadFile> getDownloadFileList() {
+        return downloadFileList;
+    }
+
+    public void setDownloadFileList(List<DownloadFile> downloadFileList) {
+        this.downloadFileList = downloadFileList;
     }
 
     public int getIsAlreadyDownload() {
@@ -59,7 +84,7 @@ public class DownloadFile {
         this.fileName = fileName;
     }
 
-    public Long getFileSize() {
+    public long getFileSize() {
         return fileSize;
     }
 
@@ -83,115 +108,65 @@ public class DownloadFile {
         DownloadFile.isReplaceAllFile = isReplaceAllFile;
     }
 
-    public void loadFile(DataSource ds, List<DownloadFile> downloadFileList) throws IOException {
+    public void loadFile() throws IOException, InterruptedException {
         URLConnection conn = fileURL.openConnection();
 
         String mime = conn.getContentType();
-        String urlFilename = new String(conn.getURL().getFile().getBytes("ISO-8859-1"), "utf-8");        
+        String urlFilename = new String(conn.getURL().getFile().getBytes("ISO-8859-1"), "utf-8");
         this.fileName = URLDecoder.decode(new File(urlFilename).getName(), "utf-8");
 
-        int isLoadFile = 1;
+        this.fileSize = conn.getContentLengthLong();
 
-        if (DownloadFile.getIsReplaceAllFile() != 1) {
-            // проверяем наличие файла среди уже загруженных
-            for (DownloadFile dfl : downloadFileList) {
-                if (fileName.equals(dfl.fileName)) {
-                    System.err.printf("File %s was already downloaded%n", fileName);
-                    isAlreadyDownload = 1;
-                    break;
+        System.out.printf("Downloading: (%s) %s [%.1fMB]\n", mime, fileName, Float.valueOf(fileSize / Utils.COUNT_BYTES_IN_MEGABYTE));
+
+        // write the inputStream to a FileOutputStream
+//        BufferedOutputStream outputStream = new BufferedOutputStream(new FileOutputStream(new File(DataSource.PATH_DOWNLOAD + "/" + fileName)));
+
+        ExecutorService threadPoolPartFile = Executors.newFixedThreadPool(COUNT_DOWNLOAD_PART);
+
+        int lenDownloadPart = (int) floor(fileSize / COUNT_DOWNLOAD_PART);
+
+        for (int i = 0; i < COUNT_DOWNLOAD_PART; i++) {
+            System.out.printf("File: %s Part: %d%n", fileName, i + 1);
+
+            int startPos = lenDownloadPart * i;
+            long filePartSize = ((i + 1) != COUNT_DOWNLOAD_PART ? lenDownloadPart : lenDownloadPart + fileSize - (lenDownloadPart * COUNT_DOWNLOAD_PART));
+
+            DownloadPartFile dpf = new DownloadPartFile(conn, startPos, filePartSize, i + 1, fileName, /*outputStream,*/ DataSource.PATH_DOWNLOAD + "/" + fileName);
+            threadPoolPartFile.execute(dpf);
+        }
+
+        // Soft stoping...
+        threadPoolPartFile.shutdown();
+
+        if (!threadPoolPartFile.isTerminated()) {
+            // Wait 1 second for tasks.
+            if (!threadPoolPartFile.awaitTermination(1, TimeUnit.SECONDS)) {
+                // Hard stop...
+                List<Runnable> shutdownNow = threadPoolPartFile.shutdownNow();
+
+                for (Runnable runnable : shutdownNow) {
+                    DownloadPartFile dpf = (DownloadPartFile) runnable;
+
+                    System.out.println("Not downloaded: " + dpf.getNumberPartFile());
                 }
             }
         }
 
-        if (isAlreadyDownload == 1 && DownloadFile.getIsReplaceAllFile() != 1) {
-            Scanner scanner = new Scanner(System.in);
+//        outputStream.close();
+        System.out.printf("\nDownloaded %s%n", fileName);
 
-            while (true) {
-                isLoadFile = -1;
-                System.out.print("Replace file (yes/no/all)? ");
-                String line = scanner.nextLine();
+        downloadFileList.add(this);
 
-                switch (line.toLowerCase().trim()) {
-                    case "yes":
-                        isLoadFile = 1;
-                        break;
-                    case "all":
-                        isLoadFile = 1;
-                        DownloadFile.setIsReplaceAllFile(1);
-                        break;
-                    case "no":
-                        isLoadFile = 0;
-                        break;
-                }
+    }
 
-                if (isLoadFile != -1) {
-                    break;
-                }
-            }
-        }
-
-        if (isLoadFile == 1) {
-            this.fileSize = conn.getContentLengthLong();
-
-            System.out.printf("Downloading: (%s) %s [%.1fMB]\n", mime, fileName, Float.valueOf(fileSize / Utils.COUNT_BYTES_IN_MEGABYTE));
-
-//            InputStream fileIS = conn.getInputStream();
-            BufferedInputStream fileIS =  new BufferedInputStream(conn.getInputStream());
-
-            // write the inputStream to a FileOutputStream
-            BufferedOutputStream outputStream = new BufferedOutputStream(new FileOutputStream(new File(ds.PATH_DOWNLOAD + "/" + fileName)));
-
-            int read = 0;
-            byte[] bytes = new byte[1024];
-
-            double cntByteCurFile = 0;
-            int prevProgress = 0;
-
-            while ((read = fileIS.read(bytes)) != -1) {
-                cntByteCurFile = cntByteCurFile + read;
-                int curProgress = (int) round(cntByteCurFile / fileSize * 100);
-                if (prevProgress != curProgress) {
-                    String strPad = Utils.padl("", curProgress + 1, '=');
-
-                    System.out.printf("\r[%-100s]", strPad);
-                }
-                outputStream.write(bytes, 0, read);
-                prevProgress = curProgress;
-            }
-
-            fileIS.close();
-            outputStream.close();
-            System.out.println("\nDownloaded");
-
-            downloadFileList.add(this);
+    @Override
+    public void run() {
+        try {
+            loadFile();
+        } catch (IOException | InterruptedException ex) {
+            Logger.getLogger(DownloadFile.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
 
-    public static void getFiles(URL playlistUrl) throws IOException {
-//        URL playlistUrl = new URL("http://www.ex.ua/playlist/17427869.m3u");
-        List<URL> fileList = new ArrayList<>();
-
-        List<DownloadFile> downloadFileList = new ArrayList<>();
-
-        DataSource ds = new DataSource(downloadFileList);
-
-        DownloadFile.setIsReplaceAllFile(0);
-
-        ShowData.ShowListAlreadyDownloadFiles(downloadFileList);
-
-        try (Scanner scanner = new Scanner(playlistUrl.openStream())) {
-            while (scanner.hasNextLine()) {
-                URL fileUrl = new URL(scanner.nextLine());
-                fileList.add(fileUrl);
-            }
-
-            for (URL fileDownloadURL : fileList) {
-                System.out.printf("%s%n", fileDownloadURL);
-
-                DownloadFile df = new DownloadFile(fileDownloadURL);
-                df.loadFile(ds, downloadFileList);
-            }
-        }
-
-    }
 }
